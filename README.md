@@ -6,6 +6,6 @@ An advanced search algorithm has been implemented to search songs in the playlis
 
 Future Improvements:
 
-Addition of redis caching
-Optimizations for Trie data structure
-Improved scalability for large playlists
+Addition of redis caching,
+optimizations for Trie data structure
+improved scalability for large playlists
