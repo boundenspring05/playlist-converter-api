@@ -1,20 +1,42 @@
 from fastapi import FastAPI, HTTPException
-from typing import List, Optional
-from database import db
-from services.playlist_service import playlist_service
+from typing import List, Any
+import database
+from services.playlist_service import get_playlist_service
 from services.trie_service import create_trie_for_playlist
 from models import Playlist, Song
-#import uvicorn
 
-# FastAPI App
+
 app = FastAPI(
     title="Music Playlist Converter",
     description="Convert playlists between YouTube Music and Spotify with Trie prefix search"
 )
 
+
 @app.get("/")
 async def root():
     return {"message": "Music Playlist Converter API", "docs": "/docs"}
+
+
+# 5. Add song to playlist
+@app.post("/playlists/{name}/songs")
+async def add_song_to_playlist(name: str, song: Song):
+    """Add a song to existing playlist"""
+    doc = await database.db.get_playlist(name)  # Now async
+    if not doc:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    song_data = {
+        "title": song.title,
+        "artist": song.artist,
+        "url": song.url
+    }
+
+    await database.db.add_song(name, song_data)  # Now async
+    return {
+        "message": f"Song '{song.title}' added to {name}",
+        #"total_songs": await database.db.get_playlist_song_count(name)
+    }
+
 
 # 1. Extract and store playlist from YouTube/Spotify
 @app.post("/playlists/{platform}/{playlist_id}")
@@ -25,8 +47,9 @@ async def store_playlist(platform: str, playlist_id: str):
     POST /playlists/spotify/37i9dQZF1DXcBWIGoYBM5M
     """
     try:
-        playlist_data = await playlist_service.extract_playlist(platform, playlist_id)
-        db.store_playlist(playlist_data)
+        service = get_playlist_service()
+        playlist_data = await service.extract_playlist(platform, playlist_id)
+        await database.db.store_playlist(playlist_data)  # Now async
         return {
             "message": "Playlist stored successfully",
             "playlist": {
@@ -42,20 +65,19 @@ async def store_playlist(platform: str, playlist_id: str):
 @app.get("/playlists")
 async def list_playlists():
     """Get all stored playlists with platform info"""
-    playlists = db.get_all_playlists()
+    playlists = await database.db.get_all_playlists()  # Now async
     return {
         "playlists": playlists,
         "total": len(playlists)
     }
 
-# 3. Display all songs in a playlist
 @app.get("/playlists/{name}", response_model=List[Song])
 async def get_playlist_songs(name: str):
-    """Get all songs from a stored playlist"""
-    doc = db.get_playlist(name)
+    doc = await database.db.get_playlist(name)
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    return [Song(**song) for song in doc["songs"]]
+    
+    return doc["songs"]  # Remove Song(**song)!
 
 # 4. Prefix search songs using Trie
 @app.get("/playlists/{name}/search")
@@ -64,7 +86,7 @@ async def search_playlist_songs(name: str, prefix: str):
     Prefix search songs in playlist using Trie data structure
     GET /playlists/myplaylist/search?prefix=beat
     """
-    doc = db.get_playlist(name)
+    doc = await database.db.get_playlist(name)  # Now async
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
     
@@ -78,26 +100,18 @@ async def search_playlist_songs(name: str, prefix: str):
         "total_matches": len(matches)
     }
 
-# 5. Add song to playlist
-@app.post("/playlists/{name}/songs")
-async def add_song_to_playlist(name: str, song: Song):
-    """Add a song to existing playlist"""
-    doc = db.get_playlist(name)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Playlist not found")
-    
-    db.add_song(name, song.dict())
-    return {"message": f"Song '{song.title}' added to {name}"}
+
 
 # 6. Remove song from playlist
 @app.delete("/playlists/{name}/songs/{title}")
 async def remove_song_from_playlist(name: str, title: str):
     """Remove song by title from playlist"""
-    doc = db.get_playlist(name)
+    doc = await database.db.get_playlist(name)
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
     
-    if db.remove_song(name, title):
+    removed = await database.db.remove_song(name, title)
+    if removed:
         return {"message": f"Song '{title}' removed from {name}"}
     raise HTTPException(status_code=404, detail="Song not found in playlist")
 
@@ -109,12 +123,13 @@ async def convert_playlist_to_platform(name: str, target_platform: str):
     POST /playlists/myplaylist/convert/spotify
     POST /playlists/myplaylist/convert/youtube
     """
-    doc = db.get_playlist(name)
+    doc = await database.db.get_playlist(name)
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
     
     try:
-        converted_url = await playlist_service.convert_playlist(name, target_platform)
+        service = get_playlist_service()
+        converted_url = await service.convert_playlist(name, target_platform)
         return {
             "message": f"Converted to {target_platform}",
             "original_playlist": name,
@@ -123,6 +138,3 @@ async def convert_playlist_to_platform(name: str, target_platform: str):
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Conversion failed: {str(e)}")
-
-#if __name__ == "__main__":
-    #uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,3 +1,5 @@
+browser.json
+.cache
 .env
 *.env
 __pycache__/

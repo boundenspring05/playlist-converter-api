@@ -4,13 +4,22 @@ from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 from dotenv import load_dotenv
 import os
 from typing import List, Dict, Any
-from database import db
+import database
 
 load_dotenv()
 
+# Global service instance
+_service_instance = None
+
+def get_playlist_service():
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = PlaylistService()
+    return _service_instance
+
 class PlaylistService:
     def __init__(self):
-        self.ytmusic = ytmusicapi.YTMusic()
+        self.ytmusic = ytmusicapi.YTMusic('browser.json')
         self.spotify_client = spotipy.Spotify(
             client_credentials_manager=SpotifyClientCredentials(
                 client_id=os.getenv("SPOTIFY_CLIENT_ID"),
@@ -107,15 +116,13 @@ class PlaylistService:
     
     async def convert_to_ytmusic(self, songs: List[Dict]) -> str:
         try:
-            # Note: Requires running `ytmusicapi setup` with user OAuth headers
-            
             # 1. Create new playlist
-            playlist_info = self.ytmusic.create_playlist(
-                name="Converted Playlist",
-                description="Converted via Playlist Converter API",
-                video_ids=[]  # Empty initially
+            playlist_id = self.ytmusic.create_playlist(
+                "Converted Playlist",
+                "Converted via Playlist Converter API",
+                privacy_status="PRIVATE"
             )
-            playlist_id = playlist_info['playlistId']
+            #playlist_id = playlist_info['playlistId']
             
             # 2. Search and add songs
             video_ids = []
@@ -151,7 +158,8 @@ class PlaylistService:
             raise ValueError("Platform must be 'youtube' or 'spotify'")
     
     async def convert_playlist(self, playlist_name: str, target_platform: str) -> str:
-        playlist_doc = db.get_playlist(playlist_name)
+        # FIXED: Use async database call
+        playlist_doc = await database.db.get_playlist(playlist_name)
         if not playlist_doc:
             raise ValueError("Playlist not found")
         
@@ -163,6 +171,3 @@ class PlaylistService:
             return await self.convert_to_spotify(songs)
         else:
             raise ValueError("Target platform must be 'youtube' or 'spotify'")
-
-# Global service instance
-playlist_service = PlaylistService()
