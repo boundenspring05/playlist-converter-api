@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
-from typing import List, Any
+from typing import List
 import database
 from services.playlist_service import get_playlist_service
 from services.trie_service import create_trie_for_playlist
 from models import Playlist, Song
 
+db = database.db
 
 app = FastAPI(
     title="Music Playlist Converter",
@@ -21,7 +22,7 @@ async def root():
 @app.post("/playlists/{name}/songs")
 async def add_song_to_playlist(name: str, song: Song):
     """Add a song to existing playlist"""
-    doc = await database.db.get_playlist(name)  # Now async
+    doc = await database.db.get_playlist(name)
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
     
@@ -31,7 +32,7 @@ async def add_song_to_playlist(name: str, song: Song):
         "url": song.url
     }
 
-    await database.db.add_song(name, song_data)  # Now async
+    await database.db.add_song(name, song_data)
     return {
         "message": f"Song '{song.title}' added to {name}",
         #"total_songs": await database.db.get_playlist_song_count(name)
@@ -49,7 +50,7 @@ async def store_playlist(platform: str, playlist_id: str):
     try:
         service = get_playlist_service()
         playlist_data = await service.extract_playlist(platform, playlist_id)
-        await database.db.store_playlist(playlist_data)  # Now async
+        await database.db.store_playlist(playlist_data)
         return {
             "message": "Playlist stored successfully",
             "playlist": {
@@ -65,11 +66,12 @@ async def store_playlist(platform: str, playlist_id: str):
 @app.get("/playlists")
 async def list_playlists():
     """Get all stored playlists with platform info"""
-    playlists = await database.db.get_all_playlists()  # Now async
+    playlists = await database.db.get_all_playlists()
     return {
         "playlists": playlists,
         "total": len(playlists)
     }
+
 
 @app.get("/playlists/{name}", response_model=List[Song])
 async def get_playlist_songs(name: str):
@@ -77,7 +79,7 @@ async def get_playlist_songs(name: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
     
-    return doc["songs"]  # Remove Song(**song)!
+    return doc["songs"]
 
 # 4. Prefix search songs using Trie
 @app.get("/playlists/{name}/search")
@@ -86,7 +88,7 @@ async def search_playlist_songs(name: str, prefix: str):
     Prefix search songs in playlist using Trie data structure
     GET /playlists/myplaylist/search?prefix=beat
     """
-    doc = await database.db.get_playlist(name)  # Now async
+    doc = await database.db.get_playlist(name)
     if not doc:
         raise HTTPException(status_code=404, detail="Playlist not found")
     
